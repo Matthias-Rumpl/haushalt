@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Haushalt</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Haushalt">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#fdf6e3">
+<style>
+  html, body { margin: 0; min-height: 100%; background: #fdf6e3; color: #2b2118; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .lade { min-height: 100vh; display: grid; place-items: center; text-align: center; padding: 24px; box-sizing: border-box; }
+  .lade img { width: 128px; height: 128px; border-radius: 28px; box-shadow: 4px 4px 0 #2b2118; border: 2.5px solid #2b2118; animation: hops 1.1s ease-in-out infinite; }
+  .lade p { margin: 18px 0 0; font-weight: 600; }
+  .lade small { display: block; margin-top: 8px; opacity: .7; }
+  .lade button { margin-top: 16px; padding: 10px 18px; border-radius: 12px; border: 2px solid #2b2118; background: #ffc93c; font-weight: 700; font-size: 15px; box-shadow: 3px 3px 0 #2b2118; }
+  @keyframes hops { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-12px); } }
+  @media (prefers-color-scheme: dark) { html, body { background: #1d2232; color: #f5eedc; } }
+</style>
+</head>
+<body>
+<div class="lade"><div><img src="icon-192.png" alt=""><p id="t">Määh – die App startet …</p><small id="s"></small></div></div>
+<script>
+// ===== Einstellungen =====
+// Link der Google-Web-App (endet auf /exec). Dieselbe Adresse, die ihr bisher im Browser geöffnet habt.
+const API = 'https://script.google.com/macros/s/AKfycbzovDaTJPWxnOmERzJQUZRyKFjq1Bvh7HPMgQc_O2MnZ1Zh8QNH9lUAo1v4HYzmeMw4sw/exec';
+// ==========================
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+// Ersatz für google.script.run: dieselben Aufrufe, aber über die Schnittstelle (doPost) des Google Scripts
+const SHIM = '(' + function (API) {
+  const ruf = (fn, args) => fetch(API, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn: fn, args: args }) })
+    .then((r) => { if (!r.ok) throw new Error('NetworkError: HTTP ' + r.status); return r.json(); });
+  const kette = (ok, err) => new Proxy({}, {
+    get(_, name) {
+      if (name === 'withSuccessHandler') return (f) => kette(f, err);
+      if (name === 'withFailureHandler') return (g) => kette(ok, g);
+      if (name === 'withUserObject') return () => kette(ok, err);
+      return (...args) => {
+        ruf(String(name), args)
+          .then((j) => { if (j && j.ok) { if (ok) ok(j.r); } else if (err) err(new Error((j && j.fehler) || 'Fehler')); })
+          .catch((e) => { if (err) err(new Error('NetworkError: ' + ((e && e.message) || 'keine Verbindung'))); });
+      };
+    }
+  });
+  window.google = { script: { run: kette(null, null) } };
+  window.HX_APP = true;
+} + ')(' + JSON.stringify(API) + ');';
+
+const KOPF = '<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><link rel="icon" href="icon-32.png">' +
+  '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Haushalt">' +
+  '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><script>' + SHIM + '<\/script>';
+
+function zeige(html) {
+  html = html.replace('<?!= daten ?>', 'null');
+  html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + KOPF) : KOPF + html;
+  document.open(); document.write(html); document.close();
+}
+function seiteHolen() {
+  return fetch(API, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn: 'seite', args: [] }) })
+    .then((r) => r.json()).then((j) => { if (!j.ok) throw new Error(j.fehler || 'Fehler'); return j.r; });
+}
+function fehler(t) {
+  document.getElementById('t').textContent = '✕ ' + t;
+  document.getElementById('s').innerHTML = 'Ist das Handy online? <br><button onclick="location.reload()">Nochmal versuchen</button>';
+}
+(async function start() {
+  if (/HIER_DEN/.test(API)) return fehler('Der Link zur Web-App fehlt noch in index.html.');
+  let alt = null; try { alt = localStorage.getItem('hx-seite'); } catch (e) {}
+  const frisch = seiteHolen().then((h) => { try { localStorage.setItem('hx-seite', h); } catch (e) {} return h; });
+  if (!alt) {
+    try { zeige(await frisch); } catch (e) { fehler((e && e.message) || 'Keine Verbindung'); }
+    return;
+  }
+  // gespeicherte Version sofort nutzen, außer die neue kommt sehr schnell (dann gleich die neue)
+  const schnell = await Promise.race([frisch.catch(() => null), new Promise((r) => setTimeout(() => r(null), 1200))]);
+  zeige(schnell || alt);
+})();
+</script>
+</body>
+</html>
