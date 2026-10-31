@@ -20,8 +20,12 @@
   .lade small { display: block; margin-top: 8px; opacity: .7; }
   .lade button { margin-top: 16px; padding: 10px 18px; border-radius: 12px; border: 2px solid #2b2118; background: #ffc93c; font-weight: 700; font-size: 15px; box-shadow: 3px 3px 0 #2b2118; }
   @keyframes hops { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-12px); } }
-  @media (prefers-color-scheme: dark) { html, body { background: #1d2232; color: #f5eedc; } }
+  html.dunkel, html.dunkel body { background: #1d2232; color: #f5eedc; }
 </style>
+<script>
+// Startbildschirm gleich in der Farbe, die die App zuletzt hatte (hell/dunkel)
+try { if (localStorage.getItem('hx-dunkel') === '1') { document.documentElement.classList.add('dunkel'); document.querySelector('meta[name=theme-color]').setAttribute('content', '#1d2232'); } } catch (e) {}
+</script>
 </head>
 <body>
 <div class="lade"><div><img src="icon-192.png" alt=""><p id="t">Määh – die App startet …</p><small id="s"></small></div></div>
