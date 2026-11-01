@@ -1,6 +1,6 @@
 // Service Worker: hält die App-Hülle (index.html, Symbole) am Handy, damit die App schnell und auch offline startet,
 // und zeigt Push-Mitteilungen der Einkaufsliste (mit Zahl am App-Symbol).
-const CACHE = 'haushalt-v2';
+const CACHE = 'haushalt-v3';
 const API = 'https://script.google.com/macros/s/AKfycbzovDaTJPWxnOmERzJQUZRyKFjq1Bvh7HPMgQc_O2MnZ1Zh8QNH9lUAo1v4HYzmeMw4sw/exec';
 const DATEIEN = ['./', './index.html', './manifest.webmanifest', './icon-32.png', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
@@ -9,10 +9,27 @@ self.addEventListener('install', (e) => {
   self.skipWaiting();
 });
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k !== 'hx-push').map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k !== 'hx-push' && k !== 'hx-teilen').map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', (e) => {
   const u = new URL(e.request.url);
+  // „Teilen“ aus anderen Apps (Android): Dateien zwischenspeichern, dann die App mit ?teilen=n öffnen
+  if (e.request.method === 'POST' && u.origin === location.origin && u.pathname.endsWith('/teilen')) {
+    e.respondWith((async () => {
+      let n = 0;
+      try {
+        const fd = await e.request.formData(), files = fd.getAll('dateien').filter((f) => f && typeof f !== 'string');
+        const c = await caches.open('hx-teilen');
+        for (const k of await c.keys()) await c.delete(k);
+        for (const f of files.slice(0, 10)) {
+          await c.put(new Request(self.registration.scope + 'geteilt/' + n), new Response(f, { headers: { 'Content-Type': f.type || 'application/octet-stream', 'X-Name': encodeURIComponent(f.name || 'Geteilt'), 'X-Zeit': String(f.lastModified || Date.now()) } }));
+          n++;
+        }
+      } catch (err) { /* nichts gespeichert */ }
+      return Response.redirect(self.registration.scope + '?teilen=' + n, 303);
+    })());
+    return;
+  }
   if (e.request.method !== 'GET' || u.origin !== location.origin) return;   // Google-Script & Co. nie abfangen
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then((hit) => {
