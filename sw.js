@@ -1,6 +1,6 @@
 // Service Worker: hält die App-Hülle (index.html, Symbole) am Handy, damit die App schnell und auch offline startet,
 // und zeigt Push-Mitteilungen der Einkaufsliste (mit Zahl am App-Symbol).
-const CACHE = 'haushalt-v4';
+const CACHE = 'haushalt-v5';
 const API = 'https://script.google.com/macros/s/AKfycbzovDaTJPWxnOmERzJQUZRyKFjq1Bvh7HPMgQc_O2MnZ1Zh8QNH9lUAo1v4HYzmeMw4sw/exec';
 const DATEIEN = ['./', './index.html', './manifest.webmanifest', './icon-32.png', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
@@ -31,6 +31,18 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   if (e.request.method !== 'GET' || u.origin !== location.origin) return;   // Google-Script & Co. nie abfangen
+  // App-Start (index.html): zuerst aus dem Netz – so kommt eine neue Version sofort; offline/langsam (> 4 s) aus dem Speicher
+  if (e.request.mode === 'navigate') {
+    e.respondWith((async () => {
+      const ausSpeicher = () => caches.match('./index.html').then((h) => h || caches.match(e.request, { ignoreSearch: true }));
+      try {
+        const netz = fetch(e.request).then((r) => { if (r && r.ok) { const k = r.clone(); caches.open(CACHE).then((c) => c.put('./index.html', k)); } return r; });
+        const langsam = new Promise((ok) => setTimeout(() => ausSpeicher().then((h) => h && ok(h)), 4000));
+        return await Promise.race([netz, langsam]);
+      } catch (err) { return (await ausSpeicher()) || Response.error(); }
+    })());
+    return;
+  }
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then((hit) => {
       const netz = fetch(e.request).then((r) => { if (r && r.ok) caches.open(CACHE).then((c) => c.put(e.request, r.clone())); return r; }).catch(() => hit);

@@ -67,26 +67,35 @@ function zeige(html) {
   document.open(); document.write(html); document.close();
 }
 // Seite holen – mit Prüfsumme: kommt nur, wenn es eine neue Version gibt (sonst {gleich:true})
-function seiteHolen(hash) {
-  return fetch(API, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn: 'seite', args: [hash || ''] }) })
-    .then((r) => r.json()).then((j) => { if (!j.ok) throw new Error(j.fehler || 'Fehler'); return typeof j.r === 'string' ? { html: j.r, hash: '' } : j.r; });
+function seiteHolen(hash, ms) {
+  const ctl = window.AbortController ? new AbortController() : null;
+  const uhr = ctl && ms ? setTimeout(() => ctl.abort(), ms) : null;
+  return fetch(API, { method: 'POST', redirect: 'follow', cache: 'no-store', signal: ctl ? ctl.signal : undefined, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn: 'seite', args: [hash || ''] }) })
+    .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .catch((e) => { throw new Error(e && e.name === 'AbortError' ? 'Keine Antwort vom Server (nach ' + Math.round(ms / 1000) + ' s)' : ((e && e.message) || 'Keine Verbindung')); })
+    .finally(() => { if (uhr) clearTimeout(uhr); }).then((j) => { if (!j.ok) throw new Error(j.fehler || 'Fehler'); return typeof j.r === 'string' ? { html: j.r, hash: '' } : j.r; });
 }
 const merk = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 function zeigeMit(html, hash) { try { sessionStorage.setItem('hx-seite-lief', hash || ''); } catch (e) {} zeige(html); }
 function fehler(t) {
   document.getElementById('t').textContent = '✕ ' + t;
-  document.getElementById('s').innerHTML = 'Ist das Handy online? <br><button onclick="location.reload()">Nochmal versuchen</button>';
+  document.getElementById('s').innerHTML = 'Ist das Handy online? Sonst WLAN/mobile Daten wechseln.<br><button onclick="location.reload()">Nochmal versuchen</button> <button onclick="location.href=API">Direkt öffnen</button>';
 }
 (async function start() {
   if (/HIER_DEN/.test(API)) return fehler('Der Link zur Web-App fehlt noch in index.html.');
   let alt = null, altHash = ''; try { alt = localStorage.getItem('hx-seite'); altHash = localStorage.getItem('hx-seite-hash') || ''; } catch (e) {}
   if (!alt) {
-    try { const r = await seiteHolen(''); merk('hx-seite', r.html); merk('hx-seite-hash', r.hash || ''); zeigeMit(r.html, r.hash); }
-    catch (e) { fehler((e && e.message) || 'Keine Verbindung'); }
+    let r = null, letzt = '';
+    for (const [ms, txt] of [[20000, ''], [30000, 'Dauert länger als sonst – zweiter Versuch …']]) {
+      if (txt) document.getElementById('s').textContent = txt;
+      try { r = await seiteHolen('', ms); break; } catch (e) { letzt = (e && e.message) || 'Keine Verbindung'; }
+    }
+    if (!r || !r.html) return fehler(letzt || 'Keine Verbindung');
+    merk('hx-seite', r.html); merk('hx-seite-hash', r.hash || ''); zeigeMit(r.html, r.hash);
     return;
   }
   // Gespeicherte Version sofort zeigen – eine neue wird im Hintergrund geholt und beim nächsten Start benutzt
-  const neu = seiteHolen(altHash);
+  const neu = seiteHolen(altHash, 60000);
   zeigeMit(alt, altHash);
   neu.then((r) => { if (r && !r.gleich && r.html) { merk('hx-seite', r.html); merk('hx-seite-hash', r.hash || ''); } }).catch(() => {});
 })();
