@@ -66,25 +66,29 @@ function zeige(html) {
   html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + KOPF) : KOPF + html;
   document.open(); document.write(html); document.close();
 }
-function seiteHolen() {
-  return fetch(API, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn: 'seite', args: [] }) })
-    .then((r) => r.json()).then((j) => { if (!j.ok) throw new Error(j.fehler || 'Fehler'); return j.r; });
+// Seite holen – mit Prüfsumme: kommt nur, wenn es eine neue Version gibt (sonst {gleich:true})
+function seiteHolen(hash) {
+  return fetch(API, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn: 'seite', args: [hash || ''] }) })
+    .then((r) => r.json()).then((j) => { if (!j.ok) throw new Error(j.fehler || 'Fehler'); return typeof j.r === 'string' ? { html: j.r, hash: '' } : j.r; });
 }
+const merk = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+function zeigeMit(html, hash) { try { sessionStorage.setItem('hx-seite-lief', hash || ''); } catch (e) {} zeige(html); }
 function fehler(t) {
   document.getElementById('t').textContent = '✕ ' + t;
   document.getElementById('s').innerHTML = 'Ist das Handy online? <br><button onclick="location.reload()">Nochmal versuchen</button>';
 }
 (async function start() {
   if (/HIER_DEN/.test(API)) return fehler('Der Link zur Web-App fehlt noch in index.html.');
-  let alt = null; try { alt = localStorage.getItem('hx-seite'); } catch (e) {}
-  const frisch = seiteHolen().then((h) => { try { localStorage.setItem('hx-seite', h); } catch (e) {} return h; });
+  let alt = null, altHash = ''; try { alt = localStorage.getItem('hx-seite'); altHash = localStorage.getItem('hx-seite-hash') || ''; } catch (e) {}
   if (!alt) {
-    try { zeige(await frisch); } catch (e) { fehler((e && e.message) || 'Keine Verbindung'); }
+    try { const r = await seiteHolen(''); merk('hx-seite', r.html); merk('hx-seite-hash', r.hash || ''); zeigeMit(r.html, r.hash); }
+    catch (e) { fehler((e && e.message) || 'Keine Verbindung'); }
     return;
   }
-  // gespeicherte Version sofort nutzen, außer die neue kommt sehr schnell (dann gleich die neue)
-  const schnell = await Promise.race([frisch.catch(() => null), new Promise((r) => setTimeout(() => r(null), 1200))]);
-  zeige(schnell || alt);
+  // Gespeicherte Version sofort zeigen – eine neue wird im Hintergrund geholt und beim nächsten Start benutzt
+  const neu = seiteHolen(altHash);
+  zeigeMit(alt, altHash);
+  neu.then((r) => { if (r && !r.gleich && r.html) { merk('hx-seite', r.html); merk('hx-seite-hash', r.hash || ''); } }).catch(() => {});
 })();
 </script>
 </body>
