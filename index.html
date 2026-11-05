@@ -62,6 +62,8 @@ const KOPF = '<link rel="manifest" href="manifest.webmanifest"><link rel="apple-
   '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><script>' + SHIM + '<\/script>';
 
 function zeige(html) {
+  // Erst wenn diese Seite fertig geladen ist – sonst hängt document.write die App UNTER den Ladebildschirm an
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', () => zeige(html), { once: true }); return; }
   html = html.replace('<?!= daten ?>', 'null');
   html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + KOPF) : KOPF + html;
   document.open(); document.write(html); document.close();
